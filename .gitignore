@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+# Local config — these contain API keys, OAuth tokens, and processing state.
+# Friends should set up their own from the .example versions in the repo.
+.env
+.env.local
+data/uploads/
+data/jobs/
+data/clips/
+data/youtube_token.json
+data/processed.json
+client_secret.json
+client_secret*.json
+models/
+# Editor/OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

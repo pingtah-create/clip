@@ -1,0 +1,14 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.18
+python-dotenv==1.0.1
+anthropic==0.40.0
+yt-dlp>=2026.3.17        # YouTube changes break old versions; always run `pip install -U yt-dlp` if downloads fail
+faster-whisper==1.1.0
+requests==2.32.3
+mediapipe==0.10.18
+opencv-python==4.10.0.84
+numpy==1.26.4
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.151.0
+feedparser==6.0.11

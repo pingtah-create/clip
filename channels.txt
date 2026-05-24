@@ -1,0 +1,16 @@
+# Channels the daemon watches. One URL per line. Lines starting with # are ignored.
+# Accepts any of these formats — the daemon resolves them to channel IDs automatically:
+#   https://www.youtube.com/@handle
+#   https://www.youtube.com/channel/UCxxxxxxxxxxxx
+#   https://www.youtube.com/c/CustomName
+# Edit this file freely. The daemon re-reads it on each cycle, so no restart needed
+# to add or remove channels.
+
+# --- Seeded examples for finance/investor content (matches style.md) ---
+# Uncomment the ones you actually want to follow:
+
+# https://www.youtube.com/@yahoofinance
+# https://www.youtube.com/@CNBC
+# https://www.youtube.com/@Bloomberg
+# https://www.youtube.com/@TheCompoundNews
+# https://www.youtube.com/@RealVisionFinance

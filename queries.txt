@@ -1,0 +1,22 @@
+# Search queries the daemon runs every cycle. One query per line. Lines starting
+# with # are ignored. The daemon picks the top fresh result per query (default 1)
+# and runs it through the pipeline.
+#
+# Good queries are specific. Better:
+#   warren buffett 2026 interview
+#   elon musk interview
+#   cathie wood interview
+# Worse:
+#   investing
+#   stocks
+#
+# The daemon uses recency + the query rank — so put queries here that you'd be
+# happy clipping the *latest* result for. If the top hit is a year old, it'll
+# be skipped (DAEMON_MAX_VIDEO_AGE_DAYS, default 14).
+
+# --- Active queries ---
+warren buffett 2026 interview
+charlie munger interview
+druckenmiller macro outlook
+# ray dalio principles interview
+# bill ackman recent interview
