@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -26,6 +27,15 @@ from dotenv import load_dotenv
 
 from . import jobs, pipeline
 from .tools import YT_DLP_CMD
+
+# Windows consoles default to cp1252, which can't encode the arrows/checkmarks we
+# print as progress markers — and an encode error there crashes the whole cycle.
+# Force the stdout/stderr streams to UTF-8 so the daemon is safe on any console.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # Load .env BEFORE reading any DAEMON_* config. override=True for the same reason
 # as main.py — beats any inherited shell env vars that would silently override.
