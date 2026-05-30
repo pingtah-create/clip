@@ -24,6 +24,7 @@ class Clip:
     error: str | None = None
     youtube_id: str | None = None        # set after a successful upload
     youtube_status: str = "skipped"      # skipped | uploading | uploaded | failed
+    face_coverage: float = 1.0           # fraction of the clip with a visible speaker
 
 
 @dataclass

@@ -15,8 +15,12 @@ from .transcribe import Segment, Word
 # with N words of context above (already-spoken, dimmed) and N words below (upcoming,
 # dimmed). The frame position never changes — only the highlighted word slides through
 # the window. This is what makes TikTok-style captions feel stable instead of jumping.
-WORDS_BEFORE = 4   # past words shown above the active word
-WORDS_AFTER = 4    # upcoming words shown below the active word
+# Caption cues are stable multi-word blocks that hold still while words highlight
+# through them. 3 words per line × up to 3 lines = ~9 words on screen at once.
+WORDS_PER_LINE = 3
+MAX_WORDS_PER_CUE = 9
+# A pause longer than this starts a fresh cue, so old text doesn't linger.
+MAX_GAP_WITHIN_CUE = 1.0
 
 # ASS colors are &HBBGGRR& (BGR, not RGB). Each entry: (primary, label).
 _COLOR_DEFAULT = r"&H00F0FF&"   # yellow — the standard active-word pop
@@ -92,49 +96,51 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     # word plus WORDS_BEFORE past words (line 1, dimmed) and WORDS_AFTER upcoming words
     # (line 3, dimmed). Active word is line 2, fully bright + colored + scaled.
     # The 3-line block stays anchored to the same screen position the whole clip.
-    n = len(words)
-    for idx, active in enumerate(words):
-        before = words[max(0, idx - WORDS_BEFORE): idx]
-        after = words[idx + 1: idx + 1 + WORDS_AFTER]
+    # Group words into stable cues (a fixed block of text that holds still on screen).
+    # Within a cue we emit one event per active word, but the BLOCK never fades or
+    # redraws — only the highlighted word changes color/scale. The static surrounding
+    # text stays rock-steady, which is what reads as "smooth" vs. the old per-word
+    # fade that flickered the whole block every word.
+    cues = _group_words(words)
+    for cue in cues:
+        cue_start = cue[0].start - clip_start
+        cue_end = cue[-1].end - clip_start + 0.3
+        for ai, active in enumerate(cue):
+            color = _emphasis_color(active.text)
+            parts = []
+            for wi, w in enumerate(cue):
+                t = _escape_ass(w.text)
+                if wi == ai:
+                    # Active word: colored, bold, gentle 100→112% scale settle.
+                    parts.append(r"{\c" + color + r"\b1\fscx100\fscy100"
+                                 r"\t(0,150,\fscx112\fscy112)}" + t +
+                                 r"{\c&HFFFFFF&\b0\fscx100\fscy100}")
+                else:
+                    # Already-spoken or upcoming: plain white, full opacity, steady.
+                    parts.append(t)
+            # Line-break every WORDS_PER_LINE so the cue is a tidy stacked block.
+            chunks = []
+            for k, p in enumerate(parts):
+                chunks.append(p)
+                if (k + 1) < len(parts):
+                    chunks.append(r"\N" if (k + 1) % WORDS_PER_LINE == 0 else " ")
+            text = "".join(chunks)
 
-        before_text = " ".join(_escape_ass(w.text) for w in before)
-        after_text = " ".join(_escape_ass(w.text) for w in after)
-        color = _emphasis_color(active.text)
-        # Active word: yellow/green/red + bold + soft bounce 95→115% scale. 280ms
-        # ramp reads as a slow "settle" rather than a snap — the longer ramp lets
-        # consecutive active words crossfade visually instead of pinging in/out.
-        active_tag = (
-            r"{\c" + color + r"\b1\fscx95\fscy95"
-            r"\t(0,280,\fscx115\fscy115)}"
-        )
-        active_text = active_tag + _escape_ass(active.text)
-
-        # Past words: white but 60% alpha (dimmed). Upcoming: same dim treatment.
-        # \alpha&H66& = ~40% transparent. Reset to opaque on the active line.
-        dim_open = r"{\alpha&H66&\b0\fscx100\fscy100}"
-        active_open = r"{\alpha&H00&}"
-        parts = []
-        if before_text:
-            parts.append(dim_open + before_text)
-        parts.append(active_open + active_text)
-        if after_text:
-            parts.append(dim_open + after_text)
-        text = r"\N".join(parts)
-
-        seg_start = max(0.0, active.start - clip_start - 0.02)
-        if idx + 1 < n:
-            seg_end = words[idx + 1].start - clip_start
-        else:
-            seg_end = active.end - clip_start + 0.2
-        if seg_end <= seg_start:
-            continue
-        # Longer per-event fade (140ms in/out) + 140ms overlap with neighbors gives
-        # a true crossfade between consecutive words — each fade-out runs while the
-        # next word's fade-in is already underway, so the caption block visually
-        # flows instead of ticking.
-        seg_end_padded = seg_end + 0.14
-        fade = r"{\fad(140,140)}"
-        lines.append(
+            seg_start = max(cue_start, active.start - clip_start - 0.02)
+            seg_end = (cue[ai + 1].start - clip_start) if ai + 1 < len(cue) else cue_end
+            if seg_end <= seg_start:
+                continue
+            # NO block-level fade — only the first event of a cue fades in, the last
+            # fades out, so the block appears/disappears smoothly but holds steady
+            # while words highlight through it.
+            if ai == 0 and len(cue) > 1:
+                fade = r"{\fad(120,0)}"
+            elif ai == len(cue) - 1:
+                fade = r"{\fad(0,120)}"
+            else:
+                fade = ""
+            seg_end_padded = seg_end
+            lines.append(
             f"Dialogue: 0,{_ts(seg_start)},{_ts(seg_end_padded)},Default,,0,0,0,,{fade}{text}\n"
         )
 

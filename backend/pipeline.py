@@ -16,6 +16,11 @@ from .transcribe import segments_to_compact_transcript, transcribe
 
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 
+# Clips with a visible speaker for less than this fraction of their runtime are
+# rejected — a talking-head Short with no face on screen won't hold viewers.
+# Tunable via MIN_FACE_COVERAGE env (0..1). 0 disables the check.
+MIN_FACE_COVERAGE = float(os.environ.get("MIN_FACE_COVERAGE", "0.5"))
+
 
 def run(job_id: str) -> None:
     job = jobs.get(job_id)
@@ -74,7 +79,14 @@ def run(job_id: str) -> None:
                 clip_dir.mkdir(exist_ok=True)
 
                 vertical = clip_dir / "vertical.mp4"
-                reframe(video, pick.start, pick.end, vertical)
+                meta.face_coverage = reframe(video, pick.start, pick.end, vertical)
+
+                # Reject visually-dead clips (slides/B-roll, no speaker on screen).
+                if MIN_FACE_COVERAGE and meta.face_coverage < MIN_FACE_COVERAGE:
+                    meta.status = "failed"
+                    meta.error = f"low face coverage ({meta.face_coverage:.0%}) — no speaker on screen"
+                    jobs.update(job_id, clips=job.clips)
+                    continue
 
                 ass = write_ass(
                     words_in_range(segments, pick.start, pick.end),

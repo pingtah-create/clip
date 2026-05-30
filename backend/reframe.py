@@ -31,8 +31,10 @@ EMA_ALPHA = 0.12        # how quickly the crop window follows the face (lower = 
 EDGE_PAD = 0.08         # keep face this far from the crop edges (fraction of crop width)
 
 
-def reframe(input_video: Path, start: float, end: float, output: Path) -> Path:
-    """Cut [start, end] from input_video, reframe to 9:16 following faces, write to output (silent)."""
+def reframe(input_video: Path, start: float, end: float, output: Path) -> float:
+    """Cut [start, end] from input_video, reframe to 9:16 following the active speaker,
+    write to output. Returns face_coverage (0..1) — the fraction of the clip that had a
+    visible face — so the pipeline can reject visually-dead clips."""
     output.parent.mkdir(parents=True, exist_ok=True)
 
     # First: extract the segment losslessly-ish to a temp file so OpenCV reads less
@@ -53,8 +55,8 @@ def reframe(input_video: Path, start: float, end: float, output: Path) -> Path:
         crop_w = src_w
         crop_h = int(round(src_w * 16 / 9))
 
-    # Pass 1: detect faces, build a smoothed center-x sequence
-    centers_x = _detect_face_centers(cap, n_frames, src_w, src_h)
+    # Pass 1: detect faces, build a smoothed center-x sequence + coverage score
+    centers_x, face_coverage = _detect_face_centers(cap, n_frames, src_w, src_h)
     cap.release()
     smoothed = _ema(centers_x, EMA_ALPHA, default=src_w / 2)
 
@@ -113,7 +115,7 @@ def reframe(input_video: Path, start: float, end: float, output: Path) -> Path:
     # Clean up temps
     tmp.unlink(missing_ok=True)
     silent_out.unlink(missing_ok=True)
-    return output
+    return face_coverage
 
 
 def _extract_segment(src: Path, start: float, end: float, dst: Path) -> None:
@@ -139,13 +141,17 @@ _LIP_BOTTOM = 14
 _TALK_BONUS = 6.0
 
 
-def _detect_face_centers(cap, n_frames: int, src_w: int, src_h: int) -> list[float | None]:
-    """For each sampled frame, return the x-center of the *active speaker*.
+def _detect_face_centers(cap, n_frames: int, src_w: int, src_h: int) -> tuple[list[float | None], float]:
+    """For each sampled frame, return the x-center of the *active speaker*, plus the
+    fraction of sampled frames that actually contained a face (face_coverage 0..1).
 
     Multi-face heuristic: among detected faces we pick the one that best combines
     face size with mouth movement (lip gap). On a host+guest interview this follows
     whoever is talking instead of locking onto the largest face. Falls back to
-    largest-face when only one face is present or FaceMesh finds no clear mover."""
+    largest-face when only one face is present or FaceMesh finds no clear mover.
+
+    face_coverage lets the pipeline reject clips that are mostly slides/B-roll with
+    no visible speaker — those tank Shorts retention."""
     mp_mesh = mp.solutions.face_mesh.FaceMesh(
         static_image_mode=False, max_num_faces=4,
         refine_landmarks=False, min_detection_confidence=0.4,
@@ -153,24 +159,29 @@ def _detect_face_centers(cap, n_frames: int, src_w: int, src_h: int) -> list[flo
     centers: list[float | None] = [None] * max(n_frames, 1)
     i = 0
     last_known = src_w / 2.0
+    sampled = 0
+    with_face = 0
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
             if i % DETECT_EVERY == 0:
+                sampled += 1
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 res = mp_mesh.process(rgb)
                 cx = _pick_speaker_x(res, src_w, src_h)
                 if cx is not None:
                     centers[i] = cx
                     last_known = cx
+                    with_face += 1
                 else:
                     centers[i] = last_known
             i += 1
     finally:
         mp_mesh.close()
-    return centers
+    coverage = (with_face / sampled) if sampled else 0.0
+    return centers, coverage
 
 
 def _pick_speaker_x(mesh_res, src_w: int, src_h: int) -> float | None:
