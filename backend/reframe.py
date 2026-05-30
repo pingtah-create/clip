@@ -14,6 +14,7 @@ mediapipe runs inline anyway. OpenCV gives us full control and isn't much slower
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -29,6 +30,10 @@ TARGET_H = 1920  # 9:16
 DETECT_EVERY = 3        # detect faces every N frames (interpolate between)
 EMA_ALPHA = 0.12        # how quickly the crop window follows the face (lower = smoother)
 EDGE_PAD = 0.08         # keep face this far from the crop edges (fraction of crop width)
+# How much wider than a strict 9:16 column the crop region is, to avoid the "blown-up
+# face" look. 1.0 = tightest vertical strip (very zoomed). 1.4 = crop 40% wider then
+# scale to fit width, showing shoulders/surroundings. Env-tunable via REFRAME_ZOOM_OUT.
+ZOOM_OUT = max(1.0, float(os.environ.get("REFRAME_ZOOM_OUT", "1.4")))
 
 
 def reframe(input_video: Path, start: float, end: float, output: Path) -> float:
@@ -47,13 +52,19 @@ def reframe(input_video: Path, start: float, end: float, output: Path) -> float:
     src_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # The crop window is 9:16 inscribed in the source. Width is whatever fits.
-    crop_h = src_h
-    crop_w = int(round(src_h * 9 / 16))
-    if crop_w > src_w:
-        # Source is already narrower than 9:16 — pillarbox instead by limiting height
-        crop_w = src_w
-        crop_h = int(round(src_w * 16 / 9))
+    # Base 9:16 crop is a narrow full-height column (src_h * 9/16 wide). That blows the
+    # face up too much, so we widen the crop by ZOOM_OUT, then scale the wider region
+    # down to the 1080-wide target and center-crop the overflow height back to 9:16.
+    # Net effect: the speaker sits in a pulled-back frame showing shoulders/context.
+    base_crop_w = src_h * 9 / 16
+    crop_w = int(round(min(base_crop_w * ZOOM_OUT, src_w)))
+    # Height of the region whose 9:16 portion we keep, given the widened width.
+    crop_h = int(round(crop_w * 16 / 9))
+    if crop_h > src_h:
+        # Can't get enough height for the widened width — fall back to full height
+        # and the widest 9:16-compatible column we can take.
+        crop_h = src_h
+        crop_w = min(int(round(src_h * 9 / 16 * ZOOM_OUT)), src_w)
 
     # Pass 1: detect faces, build a smoothed center-x sequence + coverage score
     centers_x, face_coverage = _detect_face_centers(cap, n_frames, src_w, src_h)
@@ -86,6 +97,9 @@ def reframe(input_video: Path, start: float, end: float, output: Path) -> float:
     half = crop_w / 2
     min_cx = half
     max_cx = src_w - half
+    # Vertical: center the crop_h window in the source (clamped to bounds).
+    eff_crop_h = min(crop_h, src_h)
+    y0 = max(0, (src_h - eff_crop_h) // 2)
     try:
         while True:
             ok, frame = cap.read()
@@ -94,11 +108,12 @@ def reframe(input_video: Path, start: float, end: float, output: Path) -> float:
             cx = smoothed[i] if i < len(smoothed) else smoothed[-1]
             cx = float(np.clip(cx, min_cx, max_cx))
             x0 = int(round(cx - half))
-            cropped = frame[:crop_h, x0:x0 + crop_w]
-            if cropped.shape[1] != crop_w or cropped.shape[0] != crop_h:
+            x0 = max(0, min(x0, src_w - crop_w))
+            cropped = frame[y0:y0 + eff_crop_h, x0:x0 + crop_w]
+            if cropped.shape[1] != crop_w or cropped.shape[0] != eff_crop_h:
                 # Edge case from rounding; pad to expected size
                 cropped = cv2.copyMakeBorder(
-                    cropped, 0, max(0, crop_h - cropped.shape[0]),
+                    cropped, 0, max(0, eff_crop_h - cropped.shape[0]),
                     0, max(0, crop_w - cropped.shape[1]), cv2.BORDER_REPLICATE,
                 )
             resized = cv2.resize(cropped, (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)

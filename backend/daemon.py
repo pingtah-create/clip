@@ -71,7 +71,9 @@ INTERVAL_HOURS = _cfg_int("DAEMON_INTERVAL_HOURS", 4)
 N_CLIPS_PER_VIDEO = _cfg_int("DAEMON_N_CLIPS_PER_VIDEO", 3)
 MIN_SCORE_TO_UPLOAD = _cfg_int("DAEMON_MIN_SCORE_TO_UPLOAD", 80)
 MAX_DURATION_MIN = _cfg_int("DAEMON_MAX_VIDEO_DURATION_MIN", 180)
-MIN_DURATION_MIN = _cfg_int("DAEMON_MIN_VIDEO_DURATION_MIN", 5)
+# Default raised to 20 min: long-form interviews/podcasts produce far better clips
+# (dense self-contained takes, speaker on camera throughout) than short news segments.
+MIN_DURATION_MIN = _cfg_int("DAEMON_MIN_VIDEO_DURATION_MIN", 20)
 MAX_VIDEO_AGE_DAYS = _cfg_int("DAEMON_MAX_VIDEO_AGE_DAYS", 14)
 RESULTS_PER_QUERY = _cfg_int("DAEMON_RESULTS_PER_QUERY", 1)
 # Hard cap on how long one video's full pipeline may run before the daemon abandons
@@ -157,17 +159,27 @@ def _read_queries() -> list[str]:
     return _read_lines(QUERIES_FILE)
 
 
+# Append podcast/interview framing to every query so YouTube surfaces long-form
+# talking-head content (best clip source) over news snippets. Toggle off with
+# DAEMON_PODCAST_BIAS=false.
+PODCAST_BIAS = os.environ.get("DAEMON_PODCAST_BIAS", "true").lower() == "true"
+
+
 def _search_youtube(query: str, limit: int) -> list[dict]:
-    """Run a YouTube search via yt-dlp and return up to `limit` video dicts. No API
-    quota used — yt-dlp scrapes the public search results page. Sorted by YouTube's
-    default relevance ranking; we filter by age downstream."""
+    """Run a YouTube search via yt-dlp and return candidate video dicts, sorted by
+    view count (descending) so the daemon prefers proven, high-traction long-form
+    content. No API quota used — yt-dlp scrapes the public search results page.
+
+    Over-fetches (limit×6) because we filter by age/duration/coverage downstream and
+    want enough survivors to still pick a strong one."""
+    search_q = f"{query} podcast interview" if PODCAST_BIAS else query
     try:
         res = subprocess.run(
-            [*YT_DLP_CMD, f"ytsearch{limit * 3}:{query}",  # over-fetch since some get filtered
+            [*YT_DLP_CMD, f"ytsearch{max(limit * 6, 6)}:{search_q}",
              "--flat-playlist",
-             "--print", "%(id)s\t%(title)s\t%(upload_date)s\t%(channel)s",
+             "--print", "%(id)s\t%(title)s\t%(upload_date)s\t%(view_count)s",
              "--no-warnings"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=90,
         )
     except Exception as e:
         print(f"  ! search failed for {query!r}: {e}")
@@ -179,6 +191,12 @@ def _search_youtube(query: str, limit: int) -> list[dict]:
         if len(parts) < 3:
             continue
         vid, title, upload_date = parts[0], parts[1], parts[2]
+        views = 0
+        if len(parts) >= 4:
+            try:
+                views = int(parts[3]) if parts[3] not in ("NA", "") else 0
+            except ValueError:
+                views = 0
         # upload_date is YYYYMMDD on yt-dlp's flat-playlist output, sometimes "NA"
         try:
             ts = time.mktime(time.strptime(upload_date, "%Y%m%d")) if upload_date != "NA" else 0
@@ -189,9 +207,12 @@ def _search_youtube(query: str, limit: int) -> list[dict]:
             "url": f"https://www.youtube.com/watch?v={vid}",
             "title": title,
             "published_ts": ts,
+            "view_count": views,
             "source": f"query: {query}",
         })
-    return out[:limit * 3]  # return all fetched; caller filters by age + dedup
+    # Prefer high-view content — proven traction is a decent proxy for "worth clipping".
+    out.sort(key=lambda v: v.get("view_count", 0), reverse=True)
+    return out
 
 
 def _resolve_channel_id(url: str) -> str | None:
