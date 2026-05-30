@@ -15,8 +15,14 @@
 # be skipped (DAEMON_MAX_VIDEO_AGE_DAYS, default 14).
 
 # --- Active queries ---
-warren buffett 2026 interview
-charlie munger interview
+# Mix of fresh-news topics and evergreen interview content. Age limit is set to
+# 2 years in .env (DAEMON_MAX_VIDEO_AGE_DAYS=730), so person-driven queries that
+# return year-old podcasts/interviews are fine to keep.
+
+warren buffett interview podcast
 druckenmiller macro outlook
-# ray dalio principles interview
-# bill ackman recent interview
+ray dalio principles
+bill ackman recent interview
+howard marks memo discussion
+fed rate decision reaction
+this week macro outlook

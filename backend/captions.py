@@ -100,12 +100,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         before_text = " ".join(_escape_ass(w.text) for w in before)
         after_text = " ".join(_escape_ass(w.text) for w in after)
         color = _emphasis_color(active.text)
-        # Active word: yellow/green/red + bold + soft bounce 95→115% scale. Wider
-        # ramp (200ms vs the original 120ms) reads as a "settle" rather than a snap,
-        # which feels smoother when words follow each other quickly.
+        # Active word: yellow/green/red + bold + soft bounce 95→115% scale. 280ms
+        # ramp reads as a slow "settle" rather than a snap — the longer ramp lets
+        # consecutive active words crossfade visually instead of pinging in/out.
         active_tag = (
             r"{\c" + color + r"\b1\fscx95\fscy95"
-            r"\t(0,200,\fscx115\fscy115)}"
+            r"\t(0,280,\fscx115\fscy115)}"
         )
         active_text = active_tag + _escape_ass(active.text)
 
@@ -128,11 +128,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             seg_end = active.end - clip_start + 0.2
         if seg_end <= seg_start:
             continue
-        # Slight overlap with neighbors + per-event fade smooths the transition between
-        # words. Each event lives ~80ms past its slot so the previous word's fade-out
-        # crossfades with the next word's fade-in instead of hard-cutting.
-        seg_end_padded = seg_end + 0.08
-        fade = r"{\fad(80,80)}"
+        # Longer per-event fade (140ms in/out) + 140ms overlap with neighbors gives
+        # a true crossfade between consecutive words — each fade-out runs while the
+        # next word's fade-in is already underway, so the caption block visually
+        # flows instead of ticking.
+        seg_end_padded = seg_end + 0.14
+        fade = r"{\fad(140,140)}"
         lines.append(
             f"Dialogue: 0,{_ts(seg_start)},{_ts(seg_end_padded)},Default,,0,0,0,,{fade}{text}\n"
         )
