@@ -23,8 +23,37 @@ ROOT = Path(__file__).resolve().parent.parent
 CLIENT_SECRET = ROOT / "client_secret.json"
 TOKEN_PATH = ROOT / "data" / "youtube_token.json"
 
-# youtube.upload is the narrow scope — lets us insert videos but nothing else.
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+# upload: insert videos. readonly: read back view/like/comment stats for the
+# performance feedback loop. Adding readonly changes the scope set, so existing
+# users must delete data/youtube_token.json and re-run `python -m backend.youtube`
+# to re-consent — otherwise stats calls 403.
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
+
+
+def fetch_stats(video_ids: list[str]) -> dict[str, dict]:
+    """Return {video_id: {views, likes, comments}} for up to 50 videos per call.
+    Reads statistics via the Data API. Quota cost is trivial (1 unit per call) vs.
+    the 1600/upload, so this is cheap to run every cycle."""
+    if not video_ids:
+        return {}
+    creds = _credentials()
+    youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    out: dict[str, dict] = {}
+    # API caps at 50 ids per request.
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i:i + 50]
+        resp = youtube.videos().list(part="statistics", id=",".join(batch)).execute()
+        for item in resp.get("items", []):
+            s = item.get("statistics", {})
+            out[item["id"]] = {
+                "views": int(s.get("viewCount", 0)),
+                "likes": int(s.get("likeCount", 0)),
+                "comments": int(s.get("commentCount", 0)),
+            }
+    return out
 
 
 def _credentials() -> Credentials:

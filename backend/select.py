@@ -17,6 +17,8 @@ from anthropic import Anthropic
 from .transcribe import Segment
 
 STYLE_FILE = Path(__file__).resolve().parent.parent / "style.md"
+TOP_PERFORMERS_FILE = Path(__file__).resolve().parent.parent / "data" / "top_performers.json"
+TOP_PERFORMERS_FILE = Path(__file__).resolve().parent.parent / "data" / "top_performers.json"
 
 
 @dataclass
@@ -26,6 +28,12 @@ class ClipPick:
     title: str
     hook: str
     score: int
+    hook_strength: int = 0
+
+
+# Clips whose opening line scores below this are dropped — a weak first second tanks
+# Shorts retention no matter how good the rest is. Tunable via MIN_HOOK_STRENGTH env.
+MIN_HOOK_STRENGTH = int(os.environ.get("MIN_HOOK_STRENGTH", "55"))
 
 
 # User-facing duration presets. Each maps to a (min, max) seconds range that's
@@ -37,26 +45,63 @@ DURATION_PRESETS: dict[str, tuple[int, int]] = {
 }
 
 
-BASE_SYSTEM = """You are a viral-clip producer for TikTok/Reels/Shorts. You identify the most \
-engaging, self-contained moments from long-form video transcripts. A great clip:
+BASE_SYSTEM = """You are a viral-clip producer for TikTok/Reels/Shorts. Your ONE job is to find \
+moments that stop a thumb mid-scroll in the first second. On Shorts, ~70% of viewers leave \
+in the first 2 seconds — the opening line is everything. Be ruthless about it.
 
-- Is 20-60 seconds long (strict)
-- Has a strong hook in the first 3 seconds (question, bold claim, surprise)
-- Tells a complete micro-story OR delivers one sharp insight; never trails off
-- Starts at the beginning of a thought, ends at the end of one — no mid-sentence cuts
-- Stands alone without needing earlier context
+THE HOOK TEST (a clip's first spoken line must pass at least one):
+- Bold/contrarian claim: "I haven't bought a stock in twenty years."
+- Surprising number or stakes: "I lost $40 million in a single afternoon."
+- A pattern interrupt or curiosity gap: "Everyone gets this exact thing wrong."
+- A direct, provocative question: "Why do smart people stay poor?"
+
+The first line must NOT be: a greeting, throat-clearing ("So...", "Well...", "You know..."),
+context-setting, a question being asked TO the speaker, or a slow wind-up. If the strong line
+comes 8 seconds in, START THERE — cut everything before it.
+
+A great clip also:
+- Delivers ONE complete idea — states it, supports it, lands it. Never trails off.
+- Is self-contained — no "as I said earlier", no unresolved pronouns.
+- Ends on a punchline or payoff, not mid-thought.
 
 You return strict JSON only. No prose, no markdown fences."""
 
 
 def _system_prompt() -> str:
-    """Load BASE_SYSTEM + the user's style.md if present. Lets the user steer
-    the tool toward their own channel's voice without touching code."""
+    """Load BASE_SYSTEM + the user's style.md + a performance-feedback block built
+    from past clips' real view counts. The feedback teaches the picker which hooks
+    actually earn views on THIS channel, so it gets better over time."""
+    prompt = BASE_SYSTEM
     if STYLE_FILE.exists():
         style = STYLE_FILE.read_text(encoding="utf-8").strip()
         if style:
-            return BASE_SYSTEM + "\n\n--- Channel-specific style ---\n\n" + style
-    return BASE_SYSTEM
+            prompt += "\n\n--- Channel-specific style ---\n\n" + style
+
+    feedback = _top_performers_block()
+    if feedback:
+        prompt += feedback
+    return prompt
+
+
+def _top_performers_block() -> str:
+    """Build a prompt fragment from data/top_performers.json (written by the daemon's
+    feedback loop). Empty string if the file is missing or empty — so manual web-UI
+    runs without daemon history behave exactly as before."""
+    if not TOP_PERFORMERS_FILE.exists():
+        return ""
+    try:
+        top = json.loads(TOP_PERFORMERS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not top:
+        return ""
+    lines = [f'- "{t["title"]}" ({t.get("views", 0)} views) — hook: {t.get("hook", "")}'
+             for t in top[:8]]
+    return (
+        "\n\n--- What actually performed on this channel (highest-viewed past clips) ---\n"
+        "Bias your picks and hooks toward what these had in common — the topics, "
+        "phrasing, and hook styles that earned the most views:\n\n" + "\n".join(lines)
+    )
 
 
 USER_TEMPLATE = """Below is a transcript with [HH:MM:SS.mmm] timestamps. Pick the {n} \
@@ -68,7 +113,8 @@ strongest clips by the criteria in your instructions. Return JSON in exactly thi
       "start": "HH:MM:SS.mmm",
       "end": "HH:MM:SS.mmm",
       "title": "Short scroll-stopping title (max 60 chars)",
-      "hook": "Why this clip works — one sentence",
+      "hook": "The actual opening line of the clip, paraphrased (max 70 chars)",
+      "hook_strength": 1-100,
       "score": 1-100
     }}
   ]
@@ -86,6 +132,15 @@ Sort by score descending. Rules:
 - The `hook` field must be the actual opening line of the clip (paraphrased to <=70
   chars), not a summary of the whole clip. It will be shown on screen for the first
   ~1.5s as a text overlay, so make it scroll-stopping on its own.
+- `hook_strength` (1-100): rate ONLY the first spoken line against THE HOOK TEST in
+  your instructions. Be harsh — a clip that opens with any wind-up scores below 50.
+  This is separate from `score` (overall quality). A clip can be insightful but have
+  a weak opening; say so honestly here.
+- TITLE RULE: the `title` becomes the YouTube Shorts title, so it must stop a scroll.
+  Make it a punchy claim or curiosity gap, NOT a neutral description. Max 60 chars.
+  GOOD: "Buffett: Why I Stopped Buying Stocks", "The $25M Bet That Made Munger Rich"
+  BAD:  "Warren Buffett discusses his investment philosophy", "Macro outlook 2026"
+  Never reuse the source video's title. Write a fresh one from the clip's content.
 
 Transcript:
 {transcript}"""
@@ -156,13 +211,22 @@ def pick_clips(
         dur = end - start
         if dur < max(5, dur_min * 0.7) or dur > max_allowed:
             continue  # outside the requested duration window
+        hook_strength = int(c.get("hook_strength", 0))
+        # Drop clips with a weak opening line — a soft first second kills retention.
+        # If the model didn't return hook_strength at all (0), don't filter (back-compat).
+        if hook_strength and hook_strength < MIN_HOOK_STRENGTH:
+            continue
         picks.append(ClipPick(
             start=start,
             end=end,
             title=c.get("title", "Untitled")[:80],
             hook=c.get("hook", ""),
             score=int(c.get("score", 0)),
+            hook_strength=hook_strength,
         ))
+    # Sort strongest-hook-first within the kept set so the daemon's "top N" are the
+    # most scroll-stopping, not just the highest overall quality.
+    picks.sort(key=lambda p: (p.hook_strength, p.score), reverse=True)
     return picks
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import traceback
@@ -34,7 +35,19 @@ ROOT = Path(__file__).resolve().parent.parent
 CHANNELS_FILE = ROOT / "channels.txt"
 QUERIES_FILE = ROOT / "queries.txt"
 PROCESSED_FILE = ROOT / "data" / "processed.json"
+# Top-performing clips by view count, written here for the picker to learn from.
+TOP_PERFORMERS_FILE = ROOT / "data" / "top_performers.json"
 PROCESSED_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Only score a clip's performance once it's had time to accumulate views.
+STATS_MIN_AGE_HOURS = 48
+# How many top clips to feed back into the picker prompt.
+TOP_PERFORMERS_KEEP = 8
+# Delete each job's intermediate files (source.mp4, audio.wav, per-clip temps) after
+# processing, so an unattended multi-week run doesn't fill the disk. Final clips in
+# data/clips/ are kept. Set DAEMON_KEEP_INTERMEDIATES=true to disable for debugging.
+KEEP_INTERMEDIATES = os.environ.get("DAEMON_KEEP_INTERMEDIATES", "false").lower() == "true"
+DATA_ROOT = ROOT / "data"
 
 
 def _cfg_int(key: str, default: int) -> int:
@@ -51,6 +64,10 @@ MAX_DURATION_MIN = _cfg_int("DAEMON_MAX_VIDEO_DURATION_MIN", 180)
 MIN_DURATION_MIN = _cfg_int("DAEMON_MIN_VIDEO_DURATION_MIN", 5)
 MAX_VIDEO_AGE_DAYS = _cfg_int("DAEMON_MAX_VIDEO_AGE_DAYS", 14)
 RESULTS_PER_QUERY = _cfg_int("DAEMON_RESULTS_PER_QUERY", 1)
+# Hard cap on how long one video's full pipeline may run before the daemon abandons
+# it and moves on. Protects against a corrupt file hanging ffmpeg/whisper forever.
+# Generous default: a 3hr source on CPU whisper can legitimately take ~30-40 min.
+PIPELINE_TIMEOUT_SEC = _cfg_int("DAEMON_PIPELINE_TIMEOUT_MIN", 60) * 60
 DURATION_PRESET = os.environ.get("DAEMON_DURATION_PRESET", "standard")
 
 # First-run mode: on a fresh `processed.json`, just record current videos as "seen"
@@ -70,6 +87,43 @@ def _load_processed() -> dict[str, dict]:
 
 def _save_processed(state: dict[str, dict]) -> None:
     PROCESSED_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def refresh_top_performers(state: dict[str, dict]) -> None:
+    """Pull view counts for clips uploaded >48h ago, rank them, and write the best
+    ones to top_performers.json. The picker reads that file so it learns which kinds
+    of hooks actually earn views on this channel. Runs once per cycle; cheap quota."""
+    now = time.time()
+    # Gather every uploaded clip old enough to have meaningful view data.
+    candidates: list[dict] = []
+    for rec in state.values():
+        clipped_at = rec.get("clipped_at", 0)
+        if (now - clipped_at) / 3600 < STATS_MIN_AGE_HOURS:
+            continue
+        for c in rec.get("clips", []):
+            if c.get("youtube_id"):
+                candidates.append(c)
+
+    ids = [c["youtube_id"] for c in candidates]
+    if not ids:
+        return
+
+    try:
+        from .youtube import fetch_stats
+        stats = fetch_stats(ids)
+    except Exception as e:
+        print(f"  ! stats fetch failed (need youtube.readonly scope? re-auth): {e}")
+        return
+
+    for c in candidates:
+        c["_views"] = stats.get(c["youtube_id"], {}).get("views", 0)
+
+    top = sorted(candidates, key=lambda c: c.get("_views", 0), reverse=True)[:TOP_PERFORMERS_KEEP]
+    payload = [{"title": c["title"], "hook": c["hook"], "score": c.get("score"),
+                "views": c.get("_views", 0)} for c in top]
+    TOP_PERFORMERS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if top:
+        print(f"  stats: top clip '{top[0]['title'][:40]}' has {top[0].get('_views',0)} views")
 
 
 def _read_lines(path: Path) -> list[str]:
@@ -242,8 +296,20 @@ def _process_one(video: dict) -> dict:
     global _quota_exhausted
     print(f"  → processing: {video['title']}")
     job = jobs.create(video["url"], N_CLIPS_PER_VIDEO, DURATION_PRESET)
-    # Synchronous — the daemon serializes work, no parallel jobs.
-    pipeline.run(job.id)
+
+    # Run the pipeline in a worker thread with a hard timeout. If a corrupt file hangs
+    # ffmpeg/whisper, we abandon it after PIPELINE_TIMEOUT_SEC and move on rather than
+    # freezing the daemon forever. The orphaned thread is a daemon thread, so it won't
+    # block process exit; its stuck ffmpeg child is cleaned up on the next restart.
+    import threading
+    worker = threading.Thread(target=pipeline.run, args=(job.id,), daemon=True)
+    worker.start()
+    worker.join(timeout=PIPELINE_TIMEOUT_SEC)
+    if worker.is_alive():
+        print(f"  !! pipeline exceeded {PIPELINE_TIMEOUT_SEC // 60} min — abandoning this video")
+        return {"clipped_at": time.time(), "title": video["title"],
+                "source": video.get("source", "channel"), "url": video.get("url"),
+                "num_clips": 0, "num_uploaded": 0, "error": "pipeline timeout"}
 
     job = jobs.get(job.id)
     if not job:
@@ -255,19 +321,35 @@ def _process_one(video: dict) -> dict:
 
     uploaded = 0
     skipped_quota = 0
+    # Per-clip detail recorded into processed.json so a failed/odd upload is always
+    # explainable after the fact (the Job object is in-memory only and dies with the
+    # process). One dict per rendered clip: title, score, hook, file, upload outcome.
+    clip_records: list[dict] = []
     try:
         from .youtube import upload as yt_upload
         privacy = os.environ.get("YOUTUBE_PRIVACY", "private").lower()
         tags = [t.strip() for t in os.environ.get("YOUTUBE_DEFAULT_TAGS", "shorts").split(",")
                 if t.strip()]
         for c in done_clips:
+            rec = {
+                "title": c.title,
+                "score": c.score,
+                "hook": c.hook,
+                "file": c.file,
+                "youtube_id": None,
+                "upload_status": None,
+            }
             if c.score < MIN_SCORE_TO_UPLOAD:
                 print(f"    skip (score {c.score} < {MIN_SCORE_TO_UPLOAD}): {c.title}")
+                rec["upload_status"] = f"below_threshold (score {c.score} < {MIN_SCORE_TO_UPLOAD})"
+                clip_records.append(rec)
                 continue
             if _quota_exhausted:
                 # We already hit 429 earlier in this cycle. Don't waste a network call.
                 print(f"    skip (quota exhausted): {c.title}")
+                rec["upload_status"] = "skipped_quota"
                 skipped_quota += 1
+                clip_records.append(rec)
                 continue
             try:
                 desc = (f"{c.hook}\n\nFrom: {video['title']}"
@@ -275,24 +357,42 @@ def _process_one(video: dict) -> dict:
                 vid_id = yt_upload(Path(c.file), title=c.title, description=desc,
                                    tags=tags, privacy=privacy)
                 print(f"    ↑ uploaded: {c.title} → {vid_id}")
+                rec["youtube_id"] = vid_id
+                rec["upload_status"] = "uploaded"
                 uploaded += 1
             except Exception as e:
                 print(f"    ! upload failed for {c.title}: {type(e).__name__}: {e}")
+                rec["upload_status"] = f"failed: {type(e).__name__}"
                 if "quotaExceeded" in str(e):
                     print("    !! YouTube daily quota exhausted — skipping further uploads "
                           "until next cycle. Rendered clips stay on disk for manual upload.")
                     _quota_exhausted = True
                     skipped_quota += 1
+                    rec["upload_status"] = "skipped_quota"
+            clip_records.append(rec)
     except Exception as e:
         print(f"  ! upload module error: {e}")
+
+    # Reclaim disk: drop the job's intermediate dir (source.mp4 + audio.wav + temps).
+    # Final clips live in data/clips/<id>/ and are untouched. Best-effort — a failure
+    # here must never crash the daemon.
+    if not KEEP_INTERMEDIATES:
+        try:
+            job_dir = DATA_ROOT / "jobs" / job.id
+            if job_dir.exists():
+                shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception as e:
+            print(f"  ! cleanup warning (non-fatal): {e}")
 
     return {
         "clipped_at": time.time(),
         "title": video["title"],
         "source": video.get("source", "channel"),
+        "url": video.get("url"),
         "num_clips": len(done_clips),
         "num_uploaded": uploaded,
         "num_skipped_quota": skipped_quota,
+        "clips": clip_records,
     }
 
 
@@ -305,6 +405,13 @@ def cycle() -> None:
 
     state = _load_processed()
     first_run = len(state) == 0 and FIRST_RUN_SEEDS_ONLY
+
+    # Update the performance feedback file from prior uploads' view counts.
+    if not first_run:
+        try:
+            refresh_top_performers(state)
+        except Exception as e:
+            print(f"  ! refresh_top_performers error (non-fatal): {e}")
 
     channels = _read_channels()
     queries = _read_queries()
@@ -383,6 +490,47 @@ def cycle() -> None:
         _save_processed(state)
 
 
+def print_status() -> None:
+    """`python -m backend.daemon --status` — human-readable dump of processed.json.
+    Shows what got clipped, what got skipped and why, and which clips have YouTube
+    IDs vs. are sitting on disk waiting (e.g. quota-skipped)."""
+    state = _load_processed()
+    if not state:
+        print("No processed.json yet — daemon hasn't completed a cycle.")
+        return
+
+    rows = sorted(state.items(), key=lambda kv: kv[1].get("clipped_at", 0), reverse=True)
+    total_up = sum(r.get("num_uploaded", 0) for _, r in rows)
+    total_ready = 0  # rendered clips not yet on YouTube
+    for _, r in rows:
+        for c in r.get("clips", []):
+            if c.get("upload_status") in ("skipped_quota", None) and not c.get("youtube_id"):
+                total_ready += 1
+
+    print(f"{len(rows)} videos tracked | {total_up} clips uploaded | "
+          f"{total_ready} clips rendered but not yet uploaded\n")
+
+    for vid, r in rows[:15]:
+        when = time.strftime("%m-%d %H:%M", time.localtime(r.get("clipped_at", 0)))
+        if r.get("seeded"):
+            head = "seeded (first-run)"
+        elif r.get("skipped"):
+            head = f"skipped: {r['skipped']}"
+        elif r.get("error"):
+            head = f"error: {r['error'][:40]}"
+        else:
+            head = f"clips={r.get('num_clips',0)} up={r.get('num_uploaded',0)}"
+        print(f"[{when}] {head}")
+        print(f"         {r.get('title','?')[:72]}")
+        for c in r.get("clips", []):
+            yid = c.get("youtube_id")
+            link = f"https://youtu.be/{yid}" if yid else (c.get("file") or "")
+            print(f"           · [{c.get('score','?'):>3}] {c.get('upload_status','?'):<28} "
+                  f"{c.get('title','?')[:40]}")
+            if yid:
+                print(f"                 {link}")
+
+
 def main() -> None:
     print(f"Clip daemon starting. Interval: {INTERVAL_HOURS}h. Ctrl+C to stop.")
     print(f"Config: clips/video={N_CLIPS_PER_VIDEO}, min_score={MIN_SCORE_TO_UPLOAD}, "
@@ -407,4 +555,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--status" in sys.argv:
+        print_status()
+    elif "--once" in sys.argv:
+        # Run a single cycle and exit — useful for testing without the 4h loop.
+        cycle()
+    else:
+        main()

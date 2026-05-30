@@ -10,6 +10,7 @@ data/jobs/
 data/clips/
 data/youtube_token.json
 data/processed.json
+data/top_performers.json
 client_secret.json
 client_secret*.json
 models/

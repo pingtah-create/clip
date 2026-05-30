@@ -54,8 +54,8 @@ def words_in_range(segments: list[Segment], start: float, end: float) -> list[Wo
     return out
 
 
-HOOK_DURATION = 1.6   # seconds the hook overlay stays on screen
-HOOK_FADE_MS = 250    # fade in/out for the hook
+HOOK_DURATION = 2.2   # seconds the hook overlay stays on screen — long enough to read
+HOOK_FADE_MS = 200    # fade in/out for the hook
 
 
 def write_ass(
@@ -159,7 +159,8 @@ def burn(video: Path, ass: Path, out: Path) -> Path:
 
 
 def _hook_dialogue(hook: str) -> str:
-    """A single ASS event in the Hook style: top of frame, big yellow, fades in and out."""
+    """A single ASS event in the Hook style: top of frame, big yellow, with a punchy
+    scale-in pop + fade so it slams onto screen in the first frame instead of drifting."""
     text = _escape_ass(hook.strip().upper())
     # Wrap long hooks onto 2 lines at the nearest space past the midpoint
     if len(text) > 28:
@@ -168,7 +169,10 @@ def _hook_dialogue(hook: str) -> str:
         if space != -1:
             text = text[:space] + r"\N" + text[space + 1:]
     fade = rf"{{\fad({HOOK_FADE_MS},{HOOK_FADE_MS})}}"
-    return f"Dialogue: 1,{_ts(0)},{_ts(HOOK_DURATION)},Hook,,0,0,0,,{fade}{text}\n"
+    # Scale-in pop: start at 70% and overshoot to 100% over 220ms. The overshoot read
+    # ("bigger then settle") is what makes the eye snap to it — pure fade is too passive.
+    pop = r"{\fscx70\fscy70\t(0,220,\fscx100\fscy100)}"
+    return f"Dialogue: 1,{_ts(0)},{_ts(HOOK_DURATION)},Hook,,0,0,0,,{fade}{pop}{text}\n"
 
 
 def _group_words(words: list[Word]) -> list[list[Word]]:
