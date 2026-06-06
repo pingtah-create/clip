@@ -19,3 +19,5 @@ models/
 Thumbs.db
 .vscode/
 .idea/
+# Local runtime state (not for the repo)
+.claude/
