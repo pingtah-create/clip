@@ -137,9 +137,18 @@ Sort by score descending. Rules:
   This is separate from `score` (overall quality). A clip can be insightful but have
   a weak opening; say so honestly here.
 - TITLE RULE: the `title` becomes the YouTube Shorts title, so it must stop a scroll.
-  Make it a punchy claim or curiosity gap, NOT a neutral description. Max 60 chars.
-  GOOD: "Buffett: Why I Stopped Buying Stocks", "The $25M Bet That Made Munger Rich"
-  BAD:  "Warren Buffett discusses his investment philosophy", "Macro outlook 2026"
+  Max 60 chars. Lead with the speaker's last name when notable ("Ackman: ...").
+  Our real view data shows ONE title style wins: a CURIOSITY GAP aimed at the viewer
+  ("you"/"your"), opening a loop the clip then closes. Plain topic statements get ~0
+  views. Use this pattern:
+  WINNERS (curiosity gap + "you"):
+    "Ackman: The #1 Thing You're Not Prepared For"   (our top performer)
+    "The Mistake That Costs You Everything"
+    "Why You're Poorer Than You Think"
+  LOSERS (neutral topic statements — avoid):
+    "Marks: The Truth About Market Volatility"
+    "US Is No Longer a Safe Haven"
+    "Macro Funds Return Just 2.8% a Year"
   Never reuse the source video's title. Write a fresh one from the clip's content.
 
 Transcript:

@@ -15,14 +15,22 @@
 # be skipped (DAEMON_MAX_VIDEO_AGE_DAYS, default 14).
 
 # --- Active queries ---
-# Mix of fresh-news topics and evergreen interview content. Age limit is set to
-# 2 years in .env (DAEMON_MAX_VIDEO_AGE_DAYS=730), so person-driven queries that
-# return year-old podcasts/interviews are fine to keep.
+# Ordered by what ACTUALLY gets views (per our June analysis of 14 mature clips):
+#   Ackman avg 12.5 views | Dalio 3.5 | Marks 1.2 (worst, was over-posted)
+# Biased toward younger, more controversial, personality-driven guests — they clip
+# better than dry institutional voices. Marks/Buffett demoted to the bottom.
 
-warren buffett interview podcast
-druckenmiller macro outlook
-ray dalio principles
-bill ackman recent interview
-howard marks memo discussion
+# Top performers + similar high-energy personalities
+bill ackman recent interview podcast
+chamath palihapitiya interview
+cathie wood interview 2026
+ray dalio interview podcast
+balaji srinivasan interview
+
+# Macro / event topics (decent traction, fresh)
 fed rate decision reaction
-this week macro outlook
+recession risk 2026 podcast
+
+# Lower-priority dry voices — keep but they rarely break out
+# howard marks memo discussion
+# warren buffett interview podcast
