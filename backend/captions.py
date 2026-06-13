@@ -11,14 +11,12 @@ from .tools import FFMPEG
 from .transcribe import Segment, Word
 
 
-# Sliding-window captions: the active word is always rendered on the middle line,
-# with N words of context above (already-spoken, dimmed) and N words below (upcoming,
-# dimmed). The frame position never changes — only the highlighted word slides through
-# the window. This is what makes TikTok-style captions feel stable instead of jumping.
-# Caption cues are stable multi-word blocks that hold still while words highlight
-# through them. 3 words per line × up to 3 lines = ~9 words on screen at once.
-WORDS_PER_LINE = 3
-MAX_WORDS_PER_CUE = 9
+# Punchy Shorts captions: few words on screen at once, BIG, with the active word
+# highlighted. This is the Hormozi/viral-Shorts style (vs. dense movie-subtitle text)
+# — 2 words per line × up to 2 lines = max 4 words visible, so each word is large and
+# the eye isn't split across a paragraph. Cues hold still; only the active word animates.
+WORDS_PER_LINE = 2
+MAX_WORDS_PER_CUE = 4
 # A pause longer than this starts a fresh cue, so old text doesn't linger.
 MAX_GAP_WITHIN_CUE = 1.0
 
@@ -81,7 +79,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial Black,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,2,80,80,320,1
+Style: Default,Arial Black,88,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,2,60,60,360,1
 Style: Hook,Arial Black,96,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,8,60,60,180,1
 
 [Events]
