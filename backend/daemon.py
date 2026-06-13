@@ -70,6 +70,11 @@ def _cfg_int(key: str, default: int) -> int:
 INTERVAL_HOURS = _cfg_int("DAEMON_INTERVAL_HOURS", 4)
 N_CLIPS_PER_VIDEO = _cfg_int("DAEMON_N_CLIPS_PER_VIDEO", 3)
 MIN_SCORE_TO_UPLOAD = _cfg_int("DAEMON_MIN_SCORE_TO_UPLOAD", 80)
+# Cap uploads per calendar day. Flooding a young/no-audience channel splits the tiny
+# algorithmic test-traffic across many videos; concentrating it on 1-2 best clips/day
+# is better for a channel still earning the algorithm's trust. Rendered clips over the
+# cap stay on disk (logged "skipped_cap") rather than being lost.
+MAX_UPLOADS_PER_DAY = _cfg_int("DAEMON_MAX_UPLOADS_PER_DAY", 2)
 MAX_DURATION_MIN = _cfg_int("DAEMON_MAX_VIDEO_DURATION_MIN", 180)
 # Default raised to 20 min: long-form interviews/podcasts produce far better clips
 # (dense self-contained takes, speaker on camera throughout) than short news segments.
@@ -320,10 +325,31 @@ def _should_process(video: dict) -> tuple[bool, str]:
 # 10-15s per call hammering a wall. Reset on each new cycle.
 _quota_exhausted = False
 
+# Channel CTA appended to every description — gives viewers a reason to follow and
+# something to do. Override with DAEMON_CTA.
+CTA = os.environ.get("DAEMON_CTA", "Follow for daily clips from the world's top investors.")
 
-def _process_one(video: dict) -> dict:
-    """Run the full pipeline on one video and upload its eligible clips. Returns the
-    record we'll write to processed.json."""
+
+def _uploads_today(state: dict) -> int:
+    """Count clips uploaded in the current local calendar day, from processed.json.
+    Used to enforce MAX_UPLOADS_PER_DAY across cycles (the daemon may run several
+    cycles a day, so a per-cycle cap wouldn't be enough)."""
+    today = time.strftime("%Y-%m-%d")
+    n = 0
+    for rec in state.values():
+        if time.strftime("%Y-%m-%d", time.localtime(rec.get("clipped_at", 0))) != today:
+            continue
+        for c in rec.get("clips", []):
+            if c.get("youtube_id"):
+                n += 1
+    return n
+
+
+def _process_one(video: dict, budget: list[int]) -> dict:
+    """Run the full pipeline on one video and upload its eligible clips. `budget` is a
+    single-element list holding how many more uploads are allowed today — mutated in
+    place so the cap is shared across videos within a cycle. Returns the record we'll
+    write to processed.json."""
     global _quota_exhausted
     print(f"  → processing: {video['title']}")
     job = jobs.create(video["url"], N_CLIPS_PER_VIDEO, DURATION_PRESET)
@@ -382,11 +408,19 @@ def _process_one(video: dict) -> dict:
                 skipped_quota += 1
                 clip_records.append(rec)
                 continue
+            if budget[0] <= 0:
+                # Hit the daily upload cap. Keep the rendered clip on disk; don't post.
+                print(f"    skip (daily cap reached): {c.title}")
+                rec["upload_status"] = "skipped_cap"
+                clip_records.append(rec)
+                continue
             try:
-                desc = (f"{c.hook}\n\nFrom: {video['title']}"
-                        if c.hook else f"From: {video['title']}")
+                # Description: the hook, a CTA to drive follows, then source credit.
+                hook_line = f"{c.hook}\n\n" if c.hook else ""
+                desc = f"{hook_line}{CTA}\n\nFrom: {video['title']}"
                 vid_id = yt_upload(Path(c.file), title=c.title, description=desc,
                                    tags=tags, privacy=privacy)
+                budget[0] -= 1
                 print(f"    ↑ uploaded: {c.title} → {vid_id}")
                 rec["youtube_id"] = vid_id
                 rec["upload_status"] = "uploaded"
@@ -503,6 +537,12 @@ def cycle() -> None:
               "no processing this cycle")
         return
 
+    # Daily upload budget shared across all videos this cycle (and across cycles via
+    # processed.json). A single-element list so _process_one can decrement it in place.
+    already = _uploads_today(state)
+    budget = [max(0, MAX_UPLOADS_PER_DAY - already)]
+    print(f"daily upload budget: {budget[0]} left ({already}/{MAX_UPLOADS_PER_DAY} used today)")
+
     for v in new_videos:
         ok, reason = _should_process(v)
         if not ok:
@@ -512,7 +552,7 @@ def cycle() -> None:
             _save_processed(state)
             continue
         try:
-            state[v["id"]] = _process_one(v)
+            state[v["id"]] = _process_one(v, budget)
         except Exception as e:
             print(f"  !! pipeline failed: {type(e).__name__}: {e}")
             traceback.print_exc()

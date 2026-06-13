@@ -64,6 +64,13 @@ A great clip also:
 - Is self-contained — no "as I said earlier", no unresolved pronouns.
 - Ends on a punchline or payoff, not mid-thought.
 
+ENGAGEMENT BIAS: Shorts get promoted by likes and COMMENTS, not just views. Strongly
+prefer moments that make a viewer want to react — a hot take, a claim people will argue
+with, a "most people are wrong about X", a surprising or divisive opinion, a number that
+sounds unbelievable. A clip people DISAGREE with or feel compelled to debate beats a
+clip of pleasant, agreeable wisdom. When choosing between two clips, pick the one that
+would get more comments. Avoid clips that are merely informative-but-forgettable.
+
 You return strict JSON only. No prose, no markdown fences."""
 
 
