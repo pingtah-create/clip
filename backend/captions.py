@@ -80,7 +80,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,Arial Black,88,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,7,3,2,60,60,360,1
-Style: Hook,Arial Black,96,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,8,3,8,60,60,180,1
+Style: Hook,Arial Black,64,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,6,3,8,80,80,340,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
