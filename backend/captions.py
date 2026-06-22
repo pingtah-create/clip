@@ -109,9 +109,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for wi, w in enumerate(cue):
                 t = _escape_ass(w.text)
                 if wi == ai:
-                    # Active word: colored, bold, gentle 100→112% scale settle.
+                    # Active word: colored, bold, gentle 100→110% scale over 200ms —
+                    # a smooth settle rather than a snap, so consecutive active words
+                    # ease into emphasis instead of popping abruptly.
                     parts.append(r"{\c" + color + r"\b1\fscx100\fscy100"
-                                 r"\t(0,150,\fscx112\fscy112)}" + t +
+                                 r"\t(0,200,\fscx110\fscy110)}" + t +
                                  r"{\c&HFFFFFF&\b0\fscx100\fscy100}")
                 else:
                     # Already-spoken or upcoming: plain white, full opacity, steady.
@@ -128,16 +130,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             seg_end = (cue[ai + 1].start - clip_start) if ai + 1 < len(cue) else cue_end
             if seg_end <= seg_start:
                 continue
-            # NO block-level fade — only the first event of a cue fades in, the last
-            # fades out, so the block appears/disappears smoothly but holds steady
-            # while words highlight through it.
+            # Smooth transitions at the seams only:
+            #  - first word of a cue fades IN (180ms) so the block eases onto screen
+            #  - last word's event is extended ~180ms past the cue so it overlaps the
+            #    next cue's fade-in (crossfade) instead of a hard cut to blank, and
+            #    fades OUT over 180ms.
+            #  - mid-cue words: no fade — the block holds rock-steady while the
+            #    highlight slides, which is what reads as smooth.
             if ai == 0 and len(cue) > 1:
-                fade = r"{\fad(120,0)}"
+                fade = r"{\fad(180,0)}"
+                seg_end_padded = seg_end
             elif ai == len(cue) - 1:
-                fade = r"{\fad(0,120)}"
+                fade = r"{\fad(0,180)}"
+                seg_end_padded = seg_end + 0.18   # overlap into the next cue for a crossfade
             else:
                 fade = ""
-            seg_end_padded = seg_end
+                seg_end_padded = seg_end
             lines.append(
             f"Dialogue: 0,{_ts(seg_start)},{_ts(seg_end_padded)},Default,,0,0,0,,{fade}{text}\n"
         )
