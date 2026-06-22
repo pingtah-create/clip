@@ -15,22 +15,25 @@
 # be skipped (DAEMON_MAX_VIDEO_AGE_DAYS, default 14).
 
 # --- Active queries ---
-# Ordered by what ACTUALLY gets views (per our June analysis of 14 mature clips):
-#   Ackman avg 12.5 views | Dalio 3.5 | Marks 1.2 (worst, was over-posted)
-# Biased toward younger, more controversial, personality-driven guests — they clip
-# better than dry institutional voices. Marks/Buffett demoted to the bottom.
+# Ordered by REAL view data (June 22, 60 mature clips):
+#   Wood avg 123 (max 661 — a breakout!) | Ackman 6.9 | Dalio 4.1 | Marks 2.4
+# The Wood clips win because they're AI/tech predictions with a specific number +
+# bold future claim. Lean into that lane; keep a few proven personalities for variety.
 
-# Top performers + similar high-energy personalities
+# Top lane: AI / tech / future predictions (Wood breakout pattern)
+cathie wood ark invest 2026 predictions
+cathie wood interview podcast
+ai revolution investing podcast 2026
+nuclear energy ai boom interview
+
+# Proven personalities (decent traction)
 bill ackman recent interview podcast
 chamath palihapitiya interview
-cathie wood interview 2026
-ray dalio interview podcast
-balaji srinivasan interview
 
-# Macro / event topics (decent traction, fresh)
-fed rate decision reaction
+# Macro / event (lower, but fresh)
 recession risk 2026 podcast
 
-# Lower-priority dry voices — keep but they rarely break out
+# Demoted — dry/doom voices that rarely break out (Dalio over-posted at 15 clips):
+# ray dalio interview podcast
 # howard marks memo discussion
-# warren buffett interview podcast
+# balaji srinivasan interview

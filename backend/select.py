@@ -71,6 +71,13 @@ sounds unbelievable. A clip people DISAGREE with or feel compelled to debate bea
 clip of pleasant, agreeable wisdom. When choosing between two clips, pick the one that
 would get more comments. Avoid clips that are merely informative-but-forgettable.
 
+PROVEN WINNER PATTERN (from real view data): our single best clip combined a SPECIFIC
+NUMBER with a BOLD FUTURE PREDICTION ("one nuclear stat shows how far behind we are",
+"75% cost drop no one sees coming"). Forward-looking claims with a concrete, surprising
+stat about where things are HEADED outperform retrospective wisdom about the past.
+Prioritize: future predictions, surprising statistics, "X% by year Y" claims, "nobody
+sees this coming" framing. These clip far better than backward-looking life lessons.
+
 You return strict JSON only. No prose, no markdown fences."""
 
 
