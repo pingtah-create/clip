@@ -15,25 +15,21 @@
 # be skipped (DAEMON_MAX_VIDEO_AGE_DAYS, default 14).
 
 # --- Active queries ---
-# Ordered by REAL view data (June 22, 60 mature clips):
-#   Wood avg 123 (max 661 — a breakout!) | Ackman 6.9 | Dalio 4.1 | Marks 2.4
-# The Wood clips win because they're AI/tech predictions with a specific number +
-# bold future claim. Lean into that lane; keep a few proven personalities for variety.
+# REAL view data (June 23, 63 mature clips): top clips are Pabrai 725, Wood 686,
+# Dalio 120, Gieger 103. KEY LEARNING: the winner is NOT a single speaker — it's the
+# CLIP PATTERN (shocking stat / hidden danger / curiosity gap), which travels across
+# speakers (Pabrai & Gieger broke out unexpectedly). So keep a BROAD speaker pool and
+# let the picker's winner-pattern do the filtering, rather than betting on one name.
 
-# Top lane: AI / tech / future predictions (Wood breakout pattern)
-cathie wood ark invest 2026 predictions
+# Proven breakout speakers
 cathie wood interview podcast
-ai revolution investing podcast 2026
-nuclear energy ai boom interview
-
-# Proven personalities (decent traction)
+mohnish pabrai interview podcast
+ray dalio interview podcast
 bill ackman recent interview podcast
+
+# Broad net — value/macro/tech voices that can surface a pattern-fit clip
 chamath palihapitiya interview
-
-# Macro / event (lower, but fresh)
+ai revolution investing podcast 2026
+value investing masterclass podcast
 recession risk 2026 podcast
-
-# Demoted — dry/doom voices that rarely break out (Dalio over-posted at 15 clips):
-# ray dalio interview podcast
-# howard marks memo discussion
 # balaji srinivasan interview
