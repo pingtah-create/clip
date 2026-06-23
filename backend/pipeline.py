@@ -13,6 +13,7 @@ from .download import extract_audio, fetch
 from .reframe import reframe
 from .select import pick_clips
 from .transcribe import segments_to_compact_transcript, transcribe
+from .verify import verify_clip
 
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 
@@ -20,6 +21,10 @@ DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 # rejected — a talking-head Short with no face on screen won't hold viewers.
 # Tunable via MIN_FACE_COVERAGE env (0..1). 0 disables the check.
 MIN_FACE_COVERAGE = float(os.environ.get("MIN_FACE_COVERAGE", "0.5"))
+
+# Run the deterministic verify gate (verify.py) on each rendered clip before it's
+# eligible to upload. Set VERIFY_CLIPS=false to disable.
+VERIFY_CLIPS = os.environ.get("VERIFY_CLIPS", "true").lower() == "true"
 
 
 def run(job_id: str) -> None:
@@ -97,6 +102,18 @@ def run(job_id: str) -> None:
 
                 final = clips_dir / f"{meta.id}.mp4"
                 burn(vertical, ass, final)
+
+                # Verify the rendered clip before declaring it done — the create/verify
+                # split. Catches silent failures (missing captions, black/corrupt video,
+                # no audio) that would otherwise ship. The same gate pattern as face
+                # coverage above; a failed clip is marked failed and never uploads.
+                if VERIFY_CLIPS:
+                    ok, reason = verify_clip(final, ass_path=ass)
+                    if not ok:
+                        meta.status = "failed"
+                        meta.error = f"verify failed: {reason}"
+                        jobs.update(job_id, clips=job.clips)
+                        continue
 
                 meta.file = str(final)
                 meta.status = "done"
