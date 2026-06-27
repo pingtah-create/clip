@@ -151,18 +151,22 @@ Sort by score descending. Rules:
   This is separate from `score` (overall quality). A clip can be insightful but have
   a weak opening; say so honestly here.
 - TITLE RULE: the `title` becomes the YouTube Shorts title, so it must stop a scroll.
-  Max 60 chars. Lead with the speaker's last name when notable ("Ackman: ...").
+  Max 60 chars. LEAD WITH THE SPEAKER'S RECOGNIZABLE NAME ("Ackman:", "Pabrai:",
+  "Schiff:"). NEVER use a generic role label like "Facebook Exec:", "CEO:", "Analyst:"
+  — across all our data, named-speaker titles get hundreds of views and anonymous/
+  generic ones get ~0. If you can't identify a notable name, lead straight with the
+  curiosity gap (no label) rather than a vague role.
   Our real view data shows ONE title style wins: a CURIOSITY GAP aimed at the viewer
   ("you"/"your"), opening a loop the clip then closes. Plain topic statements get ~0
   views. Use this pattern:
-  WINNERS (curiosity gap + "you"):
+  WINNERS (named speaker + curiosity gap + "you"):
     "Ackman: The #1 Thing You're Not Prepared For"   (our top performer)
-    "The Mistake That Costs You Everything"
+    "Pabrai: The 80x Mistake You're Making"
     "Why You're Poorer Than You Think"
-  LOSERS (neutral topic statements — avoid):
+  LOSERS (generic role label OR neutral topic statement — avoid both):
+    "Facebook Exec: The Most Powerful Economic Leveler"  (anonymous role = ~0 views)
     "Marks: The Truth About Market Volatility"
     "US Is No Longer a Safe Haven"
-    "Macro Funds Return Just 2.8% a Year"
   Never reuse the source video's title. Write a fresh one from the clip's content.
 
 Transcript:
