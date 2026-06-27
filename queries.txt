@@ -32,4 +32,14 @@ chamath palihapitiya interview
 ai revolution investing podcast 2026
 value investing masterclass podcast
 recession risk 2026 podcast
-# balaji srinivasan interview
+
+# High-frequency SHOWS — these publish new episodes weekly with big-name guests, so
+# they keep fresh content flowing daily (the named-people queries above tap out fast
+# because those people don't post every day). This is the fix for "found 0 new today".
+all-in podcast latest episode
+we study billionaires podcast latest
+invest like the best podcast latest
+the diary of a ceo business episode
+my first million podcast latest
+peter schiff podcast this week
+joe rogan investing finance episode
